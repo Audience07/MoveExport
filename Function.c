@@ -270,7 +270,11 @@ LPVOID _AddNewSection(OUT LPVOID FileBuffer,IN LPCSTR SectionName,IN size_t Size
 
 	//修改NumberOfSection
 	NTHeader->FileHeader.NumberOfSections += 1;
-	printf("[+]_AddNewSection:节表数量0x%x->0x%x\n", NTHeader->FileHeader.NumberOfSections-1, NTHeader->FileHeader.NumberOfSections);
+	//修改SizeOfImage
+	NTHeader->OptionalHeader.SizeOfImage += SizeOfSection;
+
+	printf("[+]_AddNewSection:节表数量:0x%x->0x%x\n", NTHeader->FileHeader.NumberOfSections-1, NTHeader->FileHeader.NumberOfSections);
+	printf("[+]_AddNewSection:SizeOfImage:0x%x->0x%x\n", NTHeader->OptionalHeader.SizeOfImage - SizeOfSection, NTHeader->OptionalHeader.SizeOfImage);
 
 	//写入新的节表
 	memcpy(NewSectionHeader, SectionHeader, sizeof(IMAGE_SECTION_HEADER));
@@ -772,7 +776,7 @@ DWORD _MoveExportByAddr(IN LPVOID FileBuffer,IN LPVOID CodeBegin_FOA) {
 	}
 
 
-
+	//返回拷过来的导出表的大小
 	return (DWORD)pNameTablePoint - ((DWORD)FileBuffer + (DWORD)CodeBegin_FOA);
 }
 

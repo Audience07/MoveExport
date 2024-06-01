@@ -12,6 +12,7 @@ int main() {
 
 	//virtualSize可能会有溢出，OpenFile多分配的空间不够处理，使得触发中断
 
+
 	
 
 	//添加节
@@ -21,8 +22,6 @@ int main() {
 	}
 
 	//移动导出表
-	
-	
 	DWORD ExportSize = _MoveExportByAddr(FileBuffer, pNewSection);
 	if (!ExportSize) {
 		printf("[-]main:_MoveExport错误\n");
