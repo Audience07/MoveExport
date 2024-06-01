@@ -1,6 +1,6 @@
 #include "head.h"
-LPSTR DLLPATH = "MyDLL.dll";
-LPSTR NewDLLPATH = "MyDLL_New.dll";
+LPSTR DLLPATH = "UvEdit.dll";
+LPSTR NewDLLPATH = "UvEdit_New.dll";
 
 int main() {
 	//打开文件,获得FileBuffer
