@@ -49,7 +49,11 @@ size_t _MemoryAlign(size_t FileSize, size_t Align);
 //将节合并为一个
 void _Mergesection(LPVOID vFileBuffer, struct FileSign* pFileSign, struct SectionTable* pSectionTable, LPSTR SectionName);
 //将导出表挪入指定节，返回节的地址
-LPVOID _MoveExport(IN LPVOID FileBuffer, IN LPCSTR SectionName);
+DWORD _MoveExportByAddr(IN LPVOID FileBuffer, IN LPVOID CodeBegin_FOA);
+//根据节的名字将导出表挪入节首
+LPVOID _MoveExportBySection(IN LPVOID FileBuffer, IN LPCSTR SectionName);
+//将重定位表挪入指定位置FOA
+DWORD _MoveReloc(LPVOID FileBuffer, LPVOID CodeBegin_FOA);
 
 
 

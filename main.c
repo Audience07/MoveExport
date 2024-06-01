@@ -23,11 +23,18 @@ int main() {
 	//移动导出表
 	
 	
-	LPVOID pMvSection = _MoveExport(FileBuffer, ".Extra");
-	if (!pMvSection) {
+	DWORD ExportSize = _MoveExportByAddr(FileBuffer, pNewSection);
+	if (!ExportSize) {
 		printf("[-]main:_MoveExport错误\n");
 		return 0;
 	}
+
+
+	DWORD RelocSize = _MoveReloc(FileBuffer, (DWORD)pNewSection + ExportSize);
+	if (!RelocSize) {
+		printf("[-]main:_MoveReloc错误\n");
+	}
+
 
 	_SaveFile(FileBuffer, NewDLLPATH);
 	

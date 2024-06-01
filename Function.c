@@ -227,6 +227,7 @@ void _WriteShellCodeToNewSection(OUT LPVOID vFileBuffer, IN struct SectionTable*
 
 //写入新的节，需传入ImageBuffer，Header头，节表数据，新节的名字
 //已重写
+//填入新节的名字，大小，为FileBuffer添加新的节，返回新节的FOA
 LPVOID _AddNewSection(OUT LPVOID FileBuffer,IN LPCSTR SectionName,IN size_t SizeOfSection) {
 	//获取PE信息
 	PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)FileBuffer;
@@ -293,7 +294,9 @@ LPVOID _AddNewSection(OUT LPVOID FileBuffer,IN LPCSTR SectionName,IN size_t Size
 	//初始化节
 	memset((DWORD)FileBuffer + NewSectionHeader->PointerToRawData, 0, NewSectionHeader->SizeOfRawData);
 	
-	return NewSectionHeader;
+
+	//返回新节开始的FOA
+	return NewSectionHeader->PointerToRawData;
 
 }
 
@@ -623,8 +626,8 @@ void _PrintReloc(LPVOID FileBuffer) {
 	
 }
 
-//将导出表挪入指定节，返回节的地址
-LPVOID _MoveExport(IN LPVOID FileBuffer,IN LPCSTR SectionName) {
+//将导出表挪入FOA，返回节的地址
+DWORD _MoveExportByAddr(IN LPVOID FileBuffer,IN LPVOID CodeBegin_FOA) {
 	//DOS头
 	PIMAGE_DOS_HEADER DOSHeader = (PIMAGE_DOS_HEADER)FileBuffer;
 	if (DOSHeader->e_magic != IMAGE_DOS_SIGNATURE) {
@@ -649,18 +652,19 @@ LPVOID _MoveExport(IN LPVOID FileBuffer,IN LPCSTR SectionName) {
 	//根据名字找出指定节
 	PIMAGE_SECTION_HEADER SectionHeader = (PIMAGE_SECTION_HEADER)((DWORD)&NTHeaders->OptionalHeader + NTHeaders->FileHeader.SizeOfOptionalHeader);
 	int i = 0;
-	BOOL Judge = FALSE;
+	//BOOL Judge = FALSE;
 	for (i = 0; i < NTHeaders->FileHeader.NumberOfSections; i++) {
-		if (!strcmp(SectionName, SectionHeader[i].Name)) {
-			Judge = TRUE;
+		if ((DWORD)CodeBegin_FOA >= SectionHeader->PointerToRawData && (DWORD)CodeBegin_FOA < SectionHeader->PointerToRawData + SectionHeader->SizeOfRawData) {
+			//Judge = TRUE;
 			break;
 		}
+		SectionHeader++;
 	}
-	if (!Judge) {
+	printf("[+]_MoveExport:当前地址节:%s\n", SectionHeader->Name);
+	/*if (!Judge) {
 		printf("[-]_MoveExport:没有指定节\n");
 		return NULL;
-	}
-	SectionHeader += i;
+	}*/
 
 	
 
@@ -681,8 +685,8 @@ LPVOID _MoveExport(IN LPVOID FileBuffer,IN LPCSTR SectionName) {
 	//拷贝名字
 
 	//定位要拷贝的位置,2个指针,一个递加,一个待在原地,方便算大小
-	LPVOID pNameOrigin = (DWORD)FileBuffer + SectionHeader->PointerToRawData;
-	LPVOID pNamePoint = (DWORD)FileBuffer + SectionHeader->PointerToRawData;
+	LPVOID pNameOrigin = (DWORD)FileBuffer + (DWORD)CodeBegin_FOA;
+	LPVOID pNamePoint = (DWORD)FileBuffer + (DWORD)CodeBegin_FOA;
 
 	PDWORD pExportNames = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, ExportTable->AddressOfNames);
 	LPCSTR Name;
@@ -693,7 +697,7 @@ LPVOID _MoveExport(IN LPVOID FileBuffer,IN LPCSTR SectionName) {
 		memcpy(pNamePoint, Name, Lenth);
 		(PBYTE)pNamePoint += Lenth+1;
 		pExportNames++;
-		printf("[+]_MoveExport:拷贝函数(%s)到%s节成功\n", Name, SectionName);
+		printf("[+]_MoveExport:拷贝函数(%s)到%x节成功\n", Name, (DWORD)CodeBegin_FOA);
 	}
 	DWORD SizeOfName = (DWORD)pNamePoint - (DWORD)pNameOrigin;
 
@@ -769,7 +773,195 @@ LPVOID _MoveExport(IN LPVOID FileBuffer,IN LPCSTR SectionName) {
 
 
 
+	return (DWORD)pNameTablePoint - ((DWORD)FileBuffer + (DWORD)CodeBegin_FOA);
+}
+
+
+
+
+
+//根据节的名字将导出表挪入节首
+LPVOID _MoveExportBySection(IN LPVOID FileBuffer, IN LPCSTR SectionName) {
+	//DOS头
+	PIMAGE_DOS_HEADER DOSHeader = (PIMAGE_DOS_HEADER)FileBuffer;
+	if (DOSHeader->e_magic != IMAGE_DOS_SIGNATURE) {
+		printf("[-]不是PE文件\n");
+		return NULL;
+	}
+	printf("[+]_MoveExport:DOSHeader:0x%x\n", DOSHeader);
+
+	//NT头
+	PIMAGE_NT_HEADERS NTHeaders = (PIMAGE_NT_HEADERS)((DWORD)FileBuffer + DOSHeader->e_lfanew);
+	if (NTHeaders->Signature != IMAGE_NT_SIGNATURE) {
+		printf("[-]缺少PE头\n");
+		return NULL;
+	}
+	printf("[+]_MoveExport:NTHeaders:0x%x\n", NTHeaders);
+
+	//打印节的数量
+	DWORD NumberOfSection = NTHeaders->FileHeader.NumberOfSections;
+	printf("[+]_MoveExport:节表的数量0x%x\n", NumberOfSection);
+
+
+	//根据名字找出指定节
+	PIMAGE_SECTION_HEADER SectionHeader = (PIMAGE_SECTION_HEADER)((DWORD)&NTHeaders->OptionalHeader + NTHeaders->FileHeader.SizeOfOptionalHeader);
+	int i = 0;
+	BOOL Judge = FALSE;
+	for (i = 0; i < NTHeaders->FileHeader.NumberOfSections; i++) {
+		if (!strcmp(SectionName, SectionHeader[i].Name)) {
+			Judge = TRUE;
+			break;
+		}
+	}
+	if (!Judge) {
+		printf("[-]_MoveExport:没有指定节\n");
+		return NULL;
+	}
+	SectionHeader += i;
+
+
+
+
+	//导出表位置
+	if (!(DWORD)NTHeaders->OptionalHeader.DataDirectory->VirtualAddress) {
+		printf("[-]_MoveExport:该文件没有导出函数\n");
+		return NULL;
+	}
+
+	PIMAGE_EXPORT_DIRECTORY ExportTable = (PIMAGE_EXPORT_DIRECTORY)((DWORD)FileBuffer + _RVAToFOA(FileBuffer, (DWORD)NTHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress));
+
+	printf("[+]_MoveExport:共0x%x个函数\n", ExportTable->NumberOfFunctions);
+	if (ExportTable->Base > 0xFFFF) {
+		printf("[-]_MoveExport:该动态链接库或许被加密\n");
+		return NULL;
+	}
+	//拷贝名字
+
+	//定位要拷贝的位置,2个指针,一个递加,一个待在原地,方便算大小
+	LPVOID pNameOrigin = (DWORD)FileBuffer + SectionHeader->PointerToRawData;
+	LPVOID pNamePoint = (DWORD)FileBuffer + SectionHeader->PointerToRawData;
+
+	PDWORD pExportNames = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, ExportTable->AddressOfNames);
+	LPCSTR Name;
+	size_t Lenth;
+	for (int i = 0; i < ExportTable->NumberOfNames; i++) {
+		Name = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, *(DWORD*)pExportNames);
+		Lenth = strlen(Name);
+		memcpy(pNamePoint, Name, Lenth);
+		(PBYTE)pNamePoint += Lenth + 1;
+		pExportNames++;
+		printf("[+]_MoveExport:拷贝函数(%s)到%s节成功\n", Name, SectionName);
+	}
+	DWORD SizeOfName = (DWORD)pNamePoint - (DWORD)pNameOrigin;
+
+
+
+	//拷贝序号表
+	LPVOID pOrdinalsOrigin = (DWORD)pNamePoint;
+	LPVOID pOrdinalsPoint = (DWORD)pOrdinalsOrigin;
+
+	LPVOID OrdinalsTable = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, ExportTable->AddressOfNameOrdinals);
+	memcpy(pOrdinalsPoint, OrdinalsTable, ExportTable->NumberOfFunctions * sizeof(WORD));
+	(WORD*)pOrdinalsPoint += ExportTable->NumberOfFunctions;
+	DWORD SizeOfOrdinalsTable = (DWORD)pOrdinalsPoint - (DWORD)pOrdinalsOrigin;
+	printf("[+]_MoveExport:挪动序号表成功,大小0x%x\n", SizeOfOrdinalsTable);
+
+
+	//拷贝函数表
+	LPVOID pFunctionOrigin = (DWORD)pOrdinalsPoint;
+	LPVOID pFunctionPoint = (DWORD)pFunctionOrigin;
+
+	LPVOID FunctionTable = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, ExportTable->AddressOfFunctions);
+	memcpy(pFunctionPoint, FunctionTable, ExportTable->NumberOfFunctions * sizeof(DWORD));
+	(DWORD*)pFunctionPoint += ExportTable->NumberOfFunctions;
+	DWORD SizeOfFunctionTable = (DWORD)pFunctionPoint - (DWORD)pFunctionOrigin;
+	printf("[+]_MoveExport:挪动函数表成功,大小0x%x\n", SizeOfFunctionTable);
+
+	//拷贝导出表
+	LPVOID pExportTableOrigin = (DWORD)pFunctionPoint;
+	LPVOID pExportTablePoint = (DWORD)pExportTableOrigin;
+
+	memcpy(pExportTablePoint, ExportTable, sizeof(IMAGE_EXPORT_DIRECTORY));
+	(BYTE*)pExportTablePoint += sizeof(IMAGE_EXPORT_DIRECTORY);
+	DWORD SizeOfExportTable = (DWORD)pExportTablePoint - (DWORD)pExportTableOrigin;
+	printf("[+]_MoveExport:挪动导出表成功,大小0x%x\n", SizeOfExportTable);
+
+	//拷贝名字表
+	LPVOID pNameTableOrigin = (DWORD)pExportTablePoint;
+	LPVOID pNameTablePoint = (DWORD)pNameTableOrigin;
+
+	LPVOID NameTable = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, ExportTable->AddressOfNames);
+
+	memcpy(pNameTablePoint, NameTable, ExportTable->NumberOfNames * sizeof(DWORD));
+	(DWORD*)pNameTablePoint += ExportTable->NumberOfNames;
+	DWORD SizeOfNameTable = (DWORD)pNameTablePoint - (DWORD)pNameTableOrigin;
+	printf("[+]_MoveExport:挪动名称表成功,大小0x%x\n", SizeOfNameTable);
+
+
+
+	//修复EXPORT_ENTRY_ADDRESS
+	(DWORD*)NTHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress = _FOAToRVA(FileBuffer, (DWORD)pExportTableOrigin - (DWORD)FileBuffer);
+	printf("[+]_MoveExport:修复入口DIRECTORY_ENTRY_EXPORT成功:0x%x\n", _FOAToRVA(FileBuffer, (DWORD)pExportTableOrigin - (DWORD)FileBuffer));
+
+	//修复新的导出表
+	PIMAGE_EXPORT_DIRECTORY NewExportTable = (DWORD)pExportTableOrigin;
+
+
+
+	//修复导出表RVA
+	NewExportTable->AddressOfNames = _FOAToRVA(FileBuffer, (DWORD)pNameTableOrigin - (DWORD)FileBuffer);
+	printf("[+]_MoveExport:修复AddressOfNames成功:0x%x\n", _FOAToRVA(FileBuffer, (DWORD)pNameTableOrigin - (DWORD)FileBuffer));
+	NewExportTable->AddressOfNameOrdinals = _FOAToRVA(FileBuffer, (DWORD)pOrdinalsOrigin - (DWORD)FileBuffer);
+	printf("[+]_MoveExport:修复AddressOfNameOrdinals成功:0x%x\n", _FOAToRVA(FileBuffer, (DWORD)pOrdinalsOrigin - (DWORD)FileBuffer));
+	NewExportTable->AddressOfFunctions = _FOAToRVA(FileBuffer, (DWORD)pFunctionOrigin - (DWORD)FileBuffer);
+	printf("[+]_MoveExport:修复AddressOfFunctions成功:0x%x\n", _FOAToRVA(FileBuffer, (DWORD)pFunctionOrigin - (DWORD)FileBuffer));
+
+	//修复名字表
+	for (int i = 0; i < ExportTable->NumberOfNames; i++) {
+		*(DWORD*)pNameTableOrigin = _FOAToRVA(FileBuffer, (DWORD)pNameOrigin - (DWORD)FileBuffer);
+		(DWORD*)pNameTableOrigin += 1;
+		(BYTE*)pNameOrigin += strlen(pNameOrigin) + 1;
+		printf("[+]_MoveExport:修复名称表0x%x成功\n", _FOAToRVA(FileBuffer, (DWORD)pNameOrigin - (DWORD)FileBuffer));
+	}
+
+
+
 	return (DWORD)SectionHeader;
 }
 
+
+//将重定位表挪入指定位置FOA
+DWORD _MoveReloc(LPVOID FileBuffer, LPVOID CodeBegin_FOA) {
+	//定位PE标识
+	PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)FileBuffer;
+	PIMAGE_NT_HEADERS NTHeader = (PIMAGE_NT_HEADERS)((DWORD)FileBuffer + DosHeader->e_lfanew);
+	PIMAGE_SECTION_HEADER SectionHeader = (DWORD)&NTHeader->OptionalHeader + NTHeader->FileHeader.SizeOfOptionalHeader;
+
+	//定位重定位表
+	LPVOID pRelocTable = (DWORD)FileBuffer + _RVAToFOA(FileBuffer, NTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+
+
+	//拷贝位置
+	LPVOID pRelocTableOrigin = (DWORD)FileBuffer + (DWORD)CodeBegin_FOA;
+	LPVOID pRelocTablePoint = (DWORD)pRelocTableOrigin;
+
+	//获取重定位表的大小
+	PIMAGE_BASE_RELOCATION Reloc = pRelocTable;
+	DWORD Size = 0;
+	while (1) {
+		Size += Reloc->SizeOfBlock;
+		(BYTE*)Reloc += Reloc->SizeOfBlock;
+		if (Reloc->VirtualAddress == 0) {
+			break;
+		}
+	}
+	memcpy(pRelocTableOrigin, pRelocTable, Size);
+	pRelocTablePoint = (DWORD)pRelocTableOrigin + Size;
+
+	//修复DIRECTORY_ENTRY_BASERELOCATION
+	NTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress = _FOAToRVA(FileBuffer, (DWORD)CodeBegin_FOA);
+
+	return (DWORD)pRelocTablePoint - (DWORD)pRelocTableOrigin;
+
+}
 
