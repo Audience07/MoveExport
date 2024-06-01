@@ -1,10 +1,14 @@
 #include "head.h"
-LPSTR DLLPATH = "UvEdit.dll";
-LPSTR NewDLLPATH = "UvEdit_New.dll";
+LPSTR DLLPATH = "MyDLL.dll";
+LPSTR NewDLLPATH = "MyDLL_New.dll";
 
 int main() {
 	//打开文件,获得FileBuffer
 	LPVOID FileBuffer = _OpenFile(DLLPATH, 0x1000);
+	if (!FileBuffer) {
+		printf("[-]检查是否有该文件\n");
+		return 0;
+	}
 
 	//virtualSize可能会有溢出，OpenFile多分配的空间不够处理，使得触发中断
 
