@@ -41,7 +41,7 @@ size_t _FindCodeSection(IN struct FileSign* pFileSign, IN struct SectionTable* p
 //将改写好的ImageBuffer重写为FileBuffer,返回NewBuffer的指针&&NewBuffer的大小
 size_t _NewBuffer(IN LPVOID* vFileBuffer, IN struct SectionTable* pSectionTable, IN struct FileSign* pFileSign, IN size_t SizeOfCode, OUT LPVOID* NewBuffer);
 //将NewBuffer存盘
-void _SaveFile(IN LPVOID* NewBuffer, IN size_t FileSize, IN LPSTR New_FilePATH);
+void _SaveFile(IN LPVOID Buffer, IN LPSTR New_FilePATH);
 //写入新的节
 LPVOID _AddNewSection(OUT LPVOID FileBuffer, IN LPCSTR SectionName, IN size_t SizeOfSection);
 //计算文件对齐，返回对齐后的大小
@@ -66,6 +66,9 @@ void _ExpansionSection(OUT LPVOID FileBuffer, IN struct FileSign* pFileSign, IN 
 
 //将RVA转换为FOA
 DWORD _RVAToFOA(LPVOID FileBuffer, DWORD RVA);
+
+//将FOA转换为RVA
+DWORD _FOAToRVA(LPVOID FileBuffer, DWORD FOA);
 
 
 //寻找当前地址所在的节
